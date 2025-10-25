@@ -25,6 +25,11 @@ pub mod x86_64;
 #[cfg(cpu_target = "x86_64")]
 pub use x86_64::*;
 
+#[cfg(cpu_target = "arc")]
+pub mod arc;
+#[cfg(cpu_target = "arc")]
+pub use arc::*;
+
 #[cfg(cpu_target = "mips")]
 pub mod mips;
 #[cfg(cpu_target = "mips")]

@@ -62,6 +62,7 @@ fork = ["libafl/fork"]
 x86_64 = ["libafl_qemu_sys/x86_64", "libvharness_sys/x86_64"]
 i386 = ["libafl_qemu_sys/i386", "libvharness_sys/i386"] # build qemu for i386
 arm = ["libafl_qemu_sys/arm", "libvharness_sys/arm"] # build qemu for arm
+arc = ["libafl_qemu_sys/arc", "libvharness_sys/arc"] # build qemu for arm
 aarch64 = [
   "libafl_qemu_sys/aarch64",
   "libvharness_sys/aarch64",

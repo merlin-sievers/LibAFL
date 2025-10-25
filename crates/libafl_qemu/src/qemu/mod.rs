@@ -165,6 +165,7 @@ pub enum CallingConvention {
     Aapcs,
     Hexagon,
     MipsO32,
+    Arc,
     Ppc32,
     RiscVilp32,
 }

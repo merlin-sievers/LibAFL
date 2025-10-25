@@ -15,7 +15,7 @@ void __libafl_qemu_testfile() {}
 pub fn build() {
     // Note: Unique features are checked in libafl_qemu_sys
     println!(
-        r#"cargo::rustc-check-cfg=cfg(cpu_target, values("arm", "aarch64", "hexagon", "i386", "mips", "ppc", "riscv32", "riscv64", "x86_64"))"#
+        r#"cargo::rustc-check-cfg=cfg(cpu_target, values("arm", "aarch64", "arc", "hexagon", "i386", "mips", "ppc", "riscv32", "riscv64", "x86_64"))"#
     );
 
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -44,6 +44,8 @@ pub fn build() {
         "arm".to_string()
     } else if cfg!(feature = "aarch64") {
         "aarch64".to_string()
+    } else if cfg!(feature = "arc") {
+        "arc".to_string()
     } else if cfg!(feature = "i386") {
         "i386".to_string()
     } else if cfg!(feature = "mips") {

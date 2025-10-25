@@ -28,9 +28,9 @@ pub use edges::{
     StdEdgeCoverageFullModuleBuilder, StdEdgeCoverageModule, StdEdgeCoverageModuleBuilder,
 };
 
-#[cfg(not(cpu_target = "hexagon"))]
+#[cfg(not(any(cpu_target = "hexagon", cpu_target = "arc")))]
 pub mod calls;
-#[cfg(not(cpu_target = "hexagon"))]
+#[cfg(not(any(cpu_target = "hexagon", cpu_target = "arc")))]
 pub use calls::CallTracerModule;
 
 #[cfg(not(any(cpu_target = "mips", cpu_target = "hexagon")))]
