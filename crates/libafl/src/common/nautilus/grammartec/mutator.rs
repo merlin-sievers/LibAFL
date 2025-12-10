@@ -13,12 +13,14 @@ use crate::common::nautilus::grammartec::{
     tree::{Tree, TreeLike, TreeMutation},
 };
 
+/// A mutator for grammar-based fuzzing
 #[derive(Debug)]
 pub struct Mutator {
     scratchpad: Tree,
 }
 
 impl Mutator {
+    /// Create a new [`Mutator`]
     #[must_use]
     pub fn new(ctx: &Context) -> Self {
         Mutator {
@@ -26,7 +28,9 @@ impl Mutator {
         }
     }
 
-    //Return value indicates if minimization is complete: true: complete, false: not complete
+    /// Minimize a tree
+    ///
+    /// Return value indicates if minimization is complete: true: complete, false: not complete
     #[expect(clippy::too_many_arguments)]
     pub fn minimize_tree<F, R: Rand>(
         &mut self,
@@ -68,7 +72,9 @@ impl Mutator {
         Ok(true)
     }
 
-    //Return value indicates if minimization is complete: true: complete, false: not complete
+    /// Minimize a tree recursively
+    ///
+    /// Return value indicates if minimization is complete: true: complete, false: not complete
     pub fn minimize_rec<F>(
         &mut self,
         tree: &mut Tree,
@@ -84,13 +90,12 @@ impl Mutator {
         let mut i = start_index;
         while i < tree.size() {
             let n = NodeId::from(i);
-            if let Some(parent) = Mutator::find_parent_with_nt(tree, n, ctx) {
-                if let Some(t) =
+            if let Some(parent) = Mutator::find_parent_with_nt(tree, n, ctx)
+                && let Some(t) =
                     Mutator::test_and_convert(tree, parent, tree, n, ctx, bits, tester)?
-                {
-                    let _ = mem::replace(tree, t);
-                    i = parent.into();
-                }
+            {
+                let _ = mem::replace(tree, t);
+                i = parent.into();
             }
             i += 1;
             if i == end_index {
@@ -100,6 +105,7 @@ impl Mutator {
         Ok(true)
     }
 
+    /// Mutate rules in a tree
     pub fn mut_rules<F, R: Rand>(
         &mut self,
         rand: &mut R,
@@ -134,6 +140,7 @@ impl Mutator {
         Ok(false)
     }
 
+    /// Mutate a tree by splicing
     pub fn mut_splice<F, R: Rand>(
         &mut self,
         rand: &mut R,
@@ -179,6 +186,7 @@ impl Mutator {
     //    return Ok(());
     //}
 
+    /// Mutate a tree randomly
     pub fn mut_random<F, R: Rand>(
         &mut self,
         rand: &mut R,
@@ -203,6 +211,7 @@ impl Mutator {
         Ok(())
     }
 
+    /// Mutate a tree by random recursion
     pub fn mut_random_recursion<F, R: Rand>(
         &mut self,
         rand: &mut R,

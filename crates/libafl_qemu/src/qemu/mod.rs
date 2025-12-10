@@ -55,7 +55,7 @@ pub use systemmode::*;
 
 mod hooks;
 pub use hooks::*;
-use libafl_bolts::{AsSliceMut, vec_init};
+use libafl_core::{AsSliceMut, vec_init};
 
 static mut QEMU_IS_INITIALIZED: bool = false;
 static mut QEMU_IS_RUNNING: bool = false;
@@ -1372,13 +1372,13 @@ pub mod pybind {
         fn write_reg(&self, reg: i32, val: GuestUsize) -> PyResult<()> {
             self.qemu
                 .write_reg(reg, val)
-                .map_err(|_| PyValueError::new_err("write register error"))
+                .map_err(|err| PyValueError::new_err(format!("write register error: {err:?}")))
         }
 
         fn read_reg(&self, reg: i32) -> PyResult<GuestUsize> {
             self.qemu
                 .read_reg(reg)
-                .map_err(|_| PyValueError::new_err("read register error"))
+                .map_err(|err| PyValueError::new_err(format!("read register error: {err:?}")))
         }
 
         fn set_breakpoint(&self, addr: GuestAddr) {

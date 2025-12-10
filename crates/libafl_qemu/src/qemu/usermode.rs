@@ -14,6 +14,8 @@ use libc::{c_int, c_uchar, siginfo_t, strlen};
 #[cfg(feature = "python")]
 use pyo3::{IntoPyObject, Py, PyRef, PyRefMut, Python, pyclass, pymethods};
 
+#[cfg(doc)]
+use crate::modules::snapshot::SnapshotModule;
 use crate::{CPU, Qemu, qemu::QEMU_IS_RUNNING};
 
 /// Choose how QEMU target signals should be handled.
@@ -556,7 +558,7 @@ pub mod pybind {
             if let Ok(p) = MmapPerms::try_from(perms) {
                 self.qemu
                     .map_private(addr, size, p)
-                    .map_err(|_| PyValueError::new_err("Failed to mmap"))
+                    .map_err(|err| PyValueError::new_err(format!("Failed to mmap: {err:?}")))
             } else {
                 Err(PyValueError::new_err("Invalid perms"))
             }
@@ -566,7 +568,7 @@ pub mod pybind {
             if let Ok(p) = MmapPerms::try_from(perms) {
                 self.qemu
                     .map_private(addr, size, p)
-                    .map_err(|_| PyValueError::new_err("Failed to mmap"))
+                    .map_err(|err| PyValueError::new_err(format!("Failed to mmap: {err:?}")))
             } else {
                 Err(PyValueError::new_err("Invalid perms"))
             }

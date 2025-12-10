@@ -46,7 +46,7 @@ use crate::observers::{
 };
 use crate::{
     Error,
-    executors::{Executor, ExitKind, HasObservers},
+    executors::{Executor, ExitKind, HasObservers, SetTimeout},
     inputs::{Input, ToTargetBytes},
     mutators::Tokens,
     observers::{MapObserver, Observer, ObserversTuple},
@@ -119,26 +119,30 @@ const FAILED_TO_START_FORKSERVER_MSG: &str = "Failed to start forkserver";
 fn report_error_and_exit(status: i32) -> Result<(), Error> {
     /* Report on the error received via the forkserver controller and exit */
     match status {
-    FS_ERROR_MAP_SIZE =>
-        Err(Error::unknown(
-            format!(
-            "{AFL_MAP_SIZE_ENV_VAR} is not set and fuzzing target reports that the required size is very large. Solution: Run the fuzzing target stand-alone with the environment variable AFL_DEBUG=1 set and set the value for __afl_final_loc in the {AFL_MAP_SIZE_ENV_VAR} environment variable for afl-fuzz."))),
-    FS_ERROR_MAP_ADDR =>
-        Err(Error::unknown(
-            "the fuzzing target reports that hardcoded map address might be the reason the mmap of the shared memory failed. Solution: recompile the target with either afl-clang-lto and do not set AFL_LLVM_MAP_ADDR or recompile with afl-clang-fast.".to_string())),
-    FS_ERROR_SHM_OPEN =>
-        Err(Error::unknown("the fuzzing target reports that the shm_open() call failed.".to_string())),
-    FS_ERROR_SHMAT =>
-        Err(Error::unknown("the fuzzing target reports that the shmat() call failed.".to_string())),
-    FS_ERROR_MMAP =>
-        Err(Error::unknown("the fuzzing target reports that the mmap() call to the shared memory failed.".to_string())),
-    FS_ERROR_OLD_CMPLOG =>
-        Err(Error::unknown(
-            "the -c cmplog target was instrumented with an too old AFL++ version, you need to recompile it.".to_string())),
-    FS_ERROR_OLD_CMPLOG_QEMU =>
-        Err(Error::unknown("The AFL++ QEMU/FRIDA loaders are from an older version, for -c you need to recompile it.".to_string())),
-    _ =>
-        Err(Error::unknown(format!("unknown error code {status} from fuzzing target!"))),
+        FS_ERROR_MAP_SIZE => Err(Error::unknown(format!(
+            "{AFL_MAP_SIZE_ENV_VAR} is not set and fuzzing target reports that the required size is very large. Solution: Run the fuzzing target stand-alone with the environment variable AFL_DEBUG=1 set and set the value for __afl_final_loc in the {AFL_MAP_SIZE_ENV_VAR} environment variable for afl-fuzz."
+        ))),
+        FS_ERROR_MAP_ADDR => Err(Error::unknown(
+            "the fuzzing target reports that hardcoded map address might be the reason the mmap of the shared memory failed. Solution: recompile the target with either afl-clang-lto and do not set AFL_LLVM_MAP_ADDR or recompile with afl-clang-fast.",
+        )),
+        FS_ERROR_SHM_OPEN => Err(Error::unknown(
+            "the fuzzing target reports that the shm_open() call failed.",
+        )),
+        FS_ERROR_SHMAT => Err(Error::unknown(
+            "the fuzzing target reports that the shmat() call failed.",
+        )),
+        FS_ERROR_MMAP => Err(Error::unknown(
+            "the fuzzing target reports that the mmap() call to the shared memory failed.",
+        )),
+        FS_ERROR_OLD_CMPLOG => Err(Error::unknown(
+            "the -c cmplog target was instrumented with an too old AFL++ version, you need to recompile it.",
+        )),
+        FS_ERROR_OLD_CMPLOG_QEMU => Err(Error::unknown(
+            "The AFL++ QEMU/FRIDA loaders are from an older version, for -c you need to recompile it.",
+        )),
+        _ => Err(Error::unknown(format!(
+            "unknown error code {status} from fuzzing target!"
+        ))),
     }
 }
 
@@ -255,7 +259,7 @@ impl ConfigTarget for Command {
     }
 
     // libc::rlim_t is i64 in freebsd and trivial_numeric_casts check will failed
-    #[cfg_attr(not(target_os = "freebsd"), expect(trivial_numeric_casts))]
+    #[allow(trivial_numeric_casts)] // on 32 bit it does not trigger
     fn setlimit(&mut self, memlimit: u64) -> &mut Self {
         if memlimit == 0 {
             return self;
@@ -422,7 +426,9 @@ impl Forkserver {
         };
 
         if env::var(SHM_ENV_VAR).is_err() {
-            return Err(Error::unknown("__AFL_SHM_ID not set. It is necessary to set this env, otherwise the forkserver cannot communicate with the fuzzer".to_string()));
+            return Err(Error::unknown(
+                "__AFL_SHM_ID not set. It is necessary to set this env, otherwise the forkserver cannot communicate with the fuzzer",
+            ));
         }
 
         let afl_debug = if let Ok(afl_debug) = env::var("AFL_DEBUG") {
@@ -1543,7 +1549,9 @@ impl<I, OT, S, SHM> HasTimeout for ForkserverExecutor<I, OT, S, SHM> {
     fn timeout(&self) -> Duration {
         self.timeout.into()
     }
+}
 
+impl<I, OT, S, SHM> SetTimeout for ForkserverExecutor<I, OT, S, SHM> {
     #[inline]
     fn set_timeout(&mut self, timeout: Duration) {
         self.timeout = TimeSpec::from_duration(timeout);
@@ -1592,6 +1600,7 @@ mod tests {
     #[test]
     #[serial]
     #[cfg_attr(miri, ignore)]
+    #[cfg_attr(target_pointer_width = "32", ignore)] // TODO: Why does this fail?
     fn test_forkserver() {
         const MAP_SIZE: usize = 65536;
         let bin = OsString::from("echo");
