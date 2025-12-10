@@ -496,7 +496,7 @@ where
                         .clone();
                     EmulatorExitResult::Breakpoint(bp.clone())
                 }
-                QemuExitReason::SyncExit => EmulatorExitResult::CustomInsn(CustomInsn::new(
+                _ => EmulatorExitResult::CustomInsn(CustomInsn::new(
                     self.command_manager.parse(self.qemu)?,
                 )),
             }),

@@ -16,8 +16,9 @@ use crate::qemu::{
     closure_post_syscall_hook_wrapper, closure_pre_syscall_hook_wrapper,
     func_post_syscall_hook_wrapper, func_pre_syscall_hook_wrapper,
 };
+use crate::{forwarded_memory_read_hook_wrapper, forwarded_memory_write_hook_wrapper, ForwardedMemoryReadFnHook, ForwardedMemoryWriteFnHook};
 use crate::{
-    CpuPostRunHook, CpuPreRunHook, CpuRunHookId, HookState, MemAccessInfo, NewThreadHookFn, Qemu,
+    CpuPostRunHook, CpuPreRunHook, CpuRunHookId, ForwardedMemoryHookId, ForwardedMemoryHookState, HookState, MemAccessInfo, NewThreadHookFn, Qemu,
     cpu_run_post_exec_hook_wrapper, cpu_run_pre_exec_hook_wrapper,
     modules::{EmulatorModule, EmulatorModuleTuple},
     qemu::{
@@ -120,6 +121,8 @@ struct EmulatorHookCollection<ET, I, S> {
 
     cpu_run_hooks: Vec<Pin<Box<HookState<CpuRunHookId>>>>,
 
+    forwarded_memory_hooks: Vec<Pin<Box<ForwardedMemoryHookState<ForwardedMemoryHookId>>>>,
+
     new_thread_hooks: Vec<Pin<Box<(NewThreadHookId, FatPtr)>>>,
 
     #[cfg(feature = "usermode")]
@@ -146,6 +149,8 @@ impl<ET, I, S> Default for EmulatorHookCollection<ET, I, S> {
             cmp_hooks: Vec::default(),
 
             cpu_run_hooks: Vec::default(),
+
+            forwarded_memory_hooks: Vec::default(),
 
             new_thread_hooks: Vec::default(),
 
@@ -845,6 +850,56 @@ where
             id
         }
     }
+
+
+    pub fn forwarded_memory(
+        &mut self,
+        read_hook: ForwardedMemoryReadFnHook<ET, I, S>,
+        write_hook: ForwardedMemoryWriteFnHook<ET, I, S>,
+    ) -> ForwardedMemoryHookId {
+        unsafe {
+            let raw_read = get_raw_hook!(
+                read_hook,
+                forwarded_memory_read_hook_wrapper::<ET, I, S>,
+                unsafe extern "C" fn(&mut ForwardedMemoryHookState<ForwardedMemoryHookId>, CPUStatePtr, GuestAddr, GuestAddr, usize, *mut GuestAddr) -> bool
+            );
+            let raw_write = get_raw_hook!(
+                write_hook,
+                forwarded_memory_write_hook_wrapper::<ET, I, S>,
+                unsafe extern "C" fn(&mut ForwardedMemoryHookState<ForwardedMemoryHookId>, CPUStatePtr, GuestAddr, GuestAddr, usize, GuestAddr)
+            );
+
+            self.hook_collection
+                .forwarded_memory_hooks
+                .push(Box::pin(ForwardedMemoryHookState::new(
+                    ForwardedMemoryHookId::invalid(),
+                    hook_to_repr!(read_hook),
+                    hook_to_repr!(write_hook),
+                )));
+
+            let hook_state = &mut *ptr::from_mut::<ForwardedMemoryHookState<ForwardedMemoryHookId>>(
+                self.hook_collection
+                    .forwarded_memory_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+
+            let id = self
+                .qemu_hooks
+                .add_forwarded_memory_hook(hook_state, raw_read, raw_write);
+
+            self.hook_collection
+                .forwarded_memory_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
 }
 
 #[cfg(feature = "usermode")]
@@ -1171,6 +1226,14 @@ where
         hook: NewThreadHookClosure<ET, I, S>,
     ) -> NewThreadHookId {
         self.hooks.thread_creation_closure(hook)
+    }
+
+    pub fn forwarded_memory(
+        &mut self,
+        read_hook: ForwardedMemoryReadFnHook<ET, I, S>,
+        write_hook: ForwardedMemoryWriteFnHook<ET, I, S>,
+    ) -> ForwardedMemoryHookId {
+        self.hooks.forwarded_memory(read_hook, write_hook)
     }
 }
 

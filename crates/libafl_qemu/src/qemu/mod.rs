@@ -106,6 +106,9 @@ pub enum QemuExitReason {
 
     /// Timeout, and it has been requested to be handled by the harness.
     Timeout,
+
+    /// Custom Exit
+    CustomExit(u32),
 }
 
 /// The thin wrapper around QEMU.
@@ -190,6 +193,7 @@ impl Display for QemuExitReason {
             QemuExitReason::SyncExit => write!(f, "Sync Exit"),
             QemuExitReason::Crash => write!(f, "Crash"),
             QemuExitReason::Timeout => write!(f, "Timeout"),
+            QemuExitReason::CustomExit(n) => write!(f, "Custom Exit: {n}"),
         }
     }
 }
@@ -714,7 +718,14 @@ impl Qemu {
                     let bp_addr = exit_reason.data.breakpoint.addr;
                     QemuExitReason::Breakpoint(bp_addr)
                 },
-                libafl_qemu_sys::libafl_exit_reason_kind_CUSTOM_INSN => QemuExitReason::SyncExit,
+                libafl_qemu_sys::libafl_exit_reason_kind_CUSTOM_INSN => {
+                    let custom_kind = unsafe { exit_reason.data.custom_insn.kind.0 };
+                    if custom_kind <= 2 {
+                        QemuExitReason::SyncExit
+                    } else {
+                        QemuExitReason::CustomExit(custom_kind)
+                    }
+                }
 
                 #[cfg(feature = "systemmode")]
                 libafl_qemu_sys::libafl_exit_reason_kind_TIMEOUT => QemuExitReason::Timeout,

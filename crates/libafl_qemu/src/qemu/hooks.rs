@@ -35,6 +35,13 @@ pub struct TcgHookState<const N: usize, H: HookId> {
 }
 
 #[derive(Debug)]
+pub struct ForwardedMemoryHookState<H: HookId> {
+    id: H,
+    read_fn: HookRepr,
+    write_fn: HookRepr,
+}
+
+#[derive(Debug)]
 pub struct HookState<H: HookId> {
     id: H,
     pre_run: HookRepr,
@@ -48,6 +55,23 @@ impl<const N: usize, H: HookId> TcgHookState<N, H> {
             generator,
             post_gen,
             execs,
+        }
+    }
+
+    /// # Safety
+    ///
+    /// ids should be in sync with QEMU hooks ids.
+    pub unsafe fn set_id(&mut self, id: H) {
+        self.id = id;
+    }
+}
+
+impl<H: HookId> ForwardedMemoryHookState<H> {
+    pub fn new(id: H, read_fn: HookRepr, write_fn: HookRepr) -> Self {
+        Self {
+            id,
+            read_fn,
+            write_fn,
         }
     }
 
@@ -217,6 +241,76 @@ macro_rules! create_wrapper {
                     let modules = EmulatorModules::<ET, I, S>::emulator_modules_mut_unchecked();
                     let func: &mut Box<dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) -> $ret_type> = &mut *(ptr::from_mut::<FatPtr>(hook) as *mut Box<dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) -> $ret_type>);
                     func(qemu, modules, inprocess_get_state::<S>(), $($param),*)
+                }
+            }
+        }
+    };
+}
+
+macro_rules! create_read_fn_wrapper {
+    ($name:ident, ($($param:ident : $param_type:ty),*), $ret_type:ty, $hook_id:ident) => {
+        paste::paste! {
+            pub extern "C" fn [<$name _read_hook_wrapper>]<ET, I, S>(hook: &mut ForwardedMemoryHookState<$hook_id>, $($param: $param_type),*) -> $ret_type
+            where
+                I: Unpin,
+                S: Unpin,
+            {
+                unsafe {
+                    let qemu = Qemu::get_unchecked();
+                    let modules = EmulatorModules::<ET, I, S>::emulator_modules_mut_unchecked();
+
+                    match &mut hook.read_fn {
+                        HookRepr::Function(ptr) => {
+                            let func: fn(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) -> $ret_type =
+                                transmute(*ptr);
+                            func(qemu, modules, inprocess_get_state::<S>(), $($param),*)
+                        }
+                        HookRepr::Closure(ptr) => {
+                            let func: &mut Box<
+                                dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) -> $ret_type,
+                            > = &mut *(ptr::from_mut::<FatPtr>(ptr) as *mut Box<
+                                dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) -> $ret_type,
+                            >);
+                            func(qemu, modules, inprocess_get_state::<S>(), $($param),*)
+                        }
+                        _ => {
+                            panic!("There is no read function defined for the forwarded memory as either a function or a closure.");
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+macro_rules! create_write_fn_wrapper {
+    ($name:ident, ($($param:ident : $param_type:ty),*), $hook_id:ident) => {
+        paste::paste! {
+            pub extern "C" fn [<$name _write_hook_wrapper>]<ET, I, S>(hook: &mut ForwardedMemoryHookState<$hook_id>, $($param: $param_type),*)
+            where
+                I: Unpin,
+                S: Unpin,
+            {
+                unsafe {
+                    let qemu = Qemu::get_unchecked();
+                    let modules = EmulatorModules::<ET, I, S>::emulator_modules_mut_unchecked();
+
+                    match &mut hook.write_fn {
+                        HookRepr::Function(ptr) => {
+                            let func: fn(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*) =
+                                transmute(*ptr);
+                            func(qemu, modules, inprocess_get_state::<S>(), $($param),*)
+                        }
+                        HookRepr::Closure(ptr) => {
+                            let func: &mut Box<
+                                dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*),
+                            > = &mut *(ptr::from_mut::<FatPtr>(ptr) as *mut Box<
+                                dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, Option<&mut S>, $($param_type),*),
+                            >);
+                            func(qemu, modules, inprocess_get_state::<S>(), $($param),*)
+                        }
+                        _ => (),
+                    }
                 }
             }
         }
@@ -933,6 +1027,63 @@ pub type CrashHookFn<ET, I, S> = fn(Qemu, &mut EmulatorModules<ET, I, S>, i32);
 #[cfg(feature = "usermode")]
 pub type CrashHookClosure<ET, I, S> = Box<dyn FnMut(Qemu, &mut EmulatorModules<ET, I, S>, i32)>;
 
+// ForwardedMemory hook wrappers
+create_hook_types!(
+    ForwardedMemoryReadFn,
+    fn(
+        Qemu,
+        &mut EmulatorModules<ET, I, S>,
+        Option<&mut S>,
+        cpu: CPUStatePtr,
+        pc: GuestAddr,
+        addr: GuestAddr,
+        size: usize,
+        value: *mut GuestAddr,
+    ) -> bool,
+    Box<
+        dyn for<'a> FnMut(
+            Qemu,
+            &'a mut EmulatorModules<ET, I, S>,
+            Option<&'a mut S>,
+            CPUStatePtr,
+            GuestAddr,
+            GuestAddr,
+            usize,
+            *mut GuestAddr,
+        ) -> bool,
+    >,
+    unsafe extern "C" fn(libafl_qemu_opaque: *const (), cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, *mut GuestAddr) -> bool
+);
+create_hook_types!(
+    ForwardedMemoryWriteFn,
+    fn(
+        Qemu,
+        &mut EmulatorModules<ET, I, S>,
+        Option<&mut S>,
+        cpu: CPUStatePtr,
+        pc: GuestAddr,
+        addr: GuestAddr,
+        size: usize,
+        value: GuestAddr,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            Qemu,
+            &'a mut EmulatorModules<ET, I, S>,
+            Option<&'a mut S>,
+            CPUStatePtr,
+            GuestAddr,
+            GuestAddr,
+            usize,
+            GuestAddr,
+        ),
+    >,
+    unsafe extern "C" fn(libafl_qemu_opaque: *const (), cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr)
+);
+create_hook_id!(ForwardedMemory, libafl_qemu_remove_forwarded_memory_hook, false);
+create_read_fn_wrapper!(forwarded_memory, (cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: *mut GuestAddr), bool, ForwardedMemoryHookId);
+create_write_fn_wrapper!(forwarded_memory, (cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr), ForwardedMemoryHookId);
+
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 ///
@@ -1252,6 +1403,21 @@ impl QemuHooks {
             let callback: extern "C" fn(u64, CPUArchStatePtr, u32) -> bool = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_new_thread_hook(Some(callback), data);
             NewThreadHookId(num)
+        }
+    }
+
+    pub fn add_forwarded_memory_hook<T: Into<HookData>>(
+        &self,
+        data: T,
+        read_fn: Option<unsafe extern "C" fn(T, cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: *mut GuestAddr) -> bool>,
+        write_fn: Option<unsafe extern "C" fn(T, cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr)>,
+    ) -> ForwardedMemoryHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let read_fn: Option<unsafe extern "C" fn(u64, cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: *mut GuestAddr) -> bool> = transmute(read_fn);
+            let write_fn: Option<unsafe extern "C" fn(u64, cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr)> = transmute(write_fn);
+            let num = libafl_qemu_sys::libafl_hook_forwarded_memory_add(data, read_fn, write_fn);
+            ForwardedMemoryHookId(num)
         }
     }
 }
