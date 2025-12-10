@@ -222,7 +222,7 @@ jobs:
   cargo-fmt:
     runs-on: ubuntu-24.04
     env:
-      MAIN_LLVM_VERSION: 20
+      MAIN_LLVM_VERSION: 21
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -715,6 +715,25 @@ jobs:
         run: cd fuzzers/fuzz_anything/baby_no_std && cargo run || test $? -ne 0 || exit 1
       - name: no_std tests
         run: cd ./crates/libafl && cargo test --no-default-features
+  
+  x86-i686-build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: add x86 i686 target
+        run: rustup target add i686-unknown-linux-gnu
+      - name: Install x86 build dependencies / multilib
+        run: sudo apt update && sudo apt -y install gcc-multilib g++-multilib
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: x86-i686
+      - name: test
+        run: cargo check --target=i686-unknown-linux-gnu
+        
 
   nostd-clippy:
     runs-on: ubuntu-24.04
@@ -850,7 +869,8 @@ jobs:
       - name: Prepare
         uses: ./.github/workflows/windows-tester-prepare
       - name: install cxx bridge
-        run: cargo install cxxbridge-cmd
+        # Needs to match version in tinyinst-rs
+        run: cargo install cxxbridge-cmd@=1.0.190
       - name: Configure Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -874,6 +894,11 @@ jobs:
       - common
     steps:
       - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Z3
+        id: z3
+        uses: cda-tum/setup-z3@v1
+        with:
+          add_to_library_path: true
       - uses: actions/checkout@v4
       - uses: ./.github/workflows/windows-tester-prepare
       - uses: Swatinem/rust-cache@v2
@@ -892,7 +917,8 @@ jobs:
       - name: Install deps
         run: brew install z3 gtk+3 python llvm@${{env.MAIN_LLVM_VERSION}}
       - name: Install cxxbridge
-        run: cargo install cxxbridge-cmd
+        # Needs to match version in tinyinst-rs
+        run: cargo install cxxbridge-cmd@=1.0.190
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: MacOS Build

@@ -1,7 +1,7 @@
 /*!
 Welcome to `LibAFL`
 */
-#![doc = include_str!("../../../README.md")]
+#![doc = include_str!("../README.md")]
 /*! */
 #![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
 #![no_std]
@@ -53,7 +53,7 @@ pub extern crate alloc;
 
 // Re-export derive(SerdeAny)
 #[cfg(feature = "derive")]
-#[expect(unused_imports)]
+#[allow(unused_imports)] // cfg-dependent
 #[macro_use]
 extern crate libafl_derive;
 #[cfg(feature = "derive")]
@@ -108,6 +108,7 @@ mod tests {
         rands::{RomuDuoJrRand, StdRand},
         tuples::tuple_list,
     };
+    use serial_test::serial;
 
     #[cfg(miri)]
     use crate::stages::ExecutionCountRestartHelperMetadata;
@@ -127,6 +128,7 @@ mod tests {
     };
 
     #[test]
+    #[serial]
     fn test_fuzzer() {
         // # Safety
         // No concurrency per testcase
@@ -180,7 +182,7 @@ mod tests {
         for i in 0..1000 {
             fuzzer
                 .fuzz_one(&mut stages, &mut executor, &mut state, &mut event_manager)
-                .unwrap_or_else(|_| panic!("Error in iter {i}"));
+                .unwrap_or_else(|err| panic!("Error in iter {i}: {err:?}"));
             if cfg!(miri) {
                 break;
             }

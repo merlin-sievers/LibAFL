@@ -35,10 +35,10 @@ const LLVM_VERSION_MIN: u32 = 15;
     feature = "dump-cfg",
 ))]
 fn dll_extension<'a>() -> &'a str {
-    if let Ok(vendor) = env::var("CARGO_CFG_TARGET_VENDOR") {
-        if vendor == "apple" {
-            return "dylib";
-        }
+    if let Ok(vendor) = env::var("CARGO_CFG_TARGET_VENDOR")
+        && vendor == "apple"
+    {
+        return "dylib";
     }
     let family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or_else(|_| "unknown".into());
     match family.as_str() {
@@ -52,6 +52,28 @@ fn dll_extension<'a>() -> &'a str {
 /// Hence, we go look for it ourselves.
 #[cfg(target_vendor = "apple")]
 fn find_llvm_config_brew() -> Result<PathBuf, String> {
+    match Command::new("brew").arg("--prefix").output() {
+        Ok(output) => {
+            let brew_location = str::from_utf8(&output.stdout).unwrap_or_default().trim();
+            if brew_location.is_empty() {
+                return Err("Empty return from brew --prefix".to_string());
+            }
+            let location_suffix = "opt/llvm/bin/llvm-config";
+            let prefix_glob = [
+                // location for non cellared llvm
+                format!("{brew_location}/{location_suffix}"),
+            ];
+            let glob_results = prefix_glob.iter().flat_map(|location| {
+                glob(location).unwrap_or_else(|err| {
+                    panic!("Could not read glob path {location} ({err})");
+                })
+            });
+            if let Some(path) = glob_results.last() {
+                return Ok(path.unwrap());
+            }
+        }
+        Err(err) => return Err(format!("Could not execute brew --prefix: {err:?}")),
+    }
     match Command::new("brew").arg("--cellar").output() {
         Ok(output) => {
             let brew_cellar_location = str::from_utf8(&output.stdout).unwrap_or_default().trim();
@@ -149,10 +171,10 @@ fn find_llvm_version() -> Option<i32> {
     } else {
         exec_llvm_config(&["--version"])
     };
-    if let Some(major) = output.split('.').collect::<Vec<&str>>().first() {
-        if let Ok(res) = major.parse::<i32>() {
-            return Some(res);
-        }
+    if let Some(major) = output.split('.').collect::<Vec<&str>>().first()
+        && let Ok(res) = major.parse::<i32>()
+    {
+        return Some(res);
     }
     None
 }

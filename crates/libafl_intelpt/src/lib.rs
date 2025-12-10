@@ -2,12 +2,11 @@
 //!
 //! This crate interacts with the linux kernel (specifically with perf) and therefore it only works
 //! on linux hosts
-
+#![doc = include_str!("../README.md")]
 // Just in case this crate will have real `no_std` support in the future
 #![no_std]
 #![cfg(target_arch = "x86_64")]
 #![cfg(feature = "std")]
-#![cfg(feature = "libipt")]
 
 #[macro_use]
 extern crate std;
@@ -21,9 +20,6 @@ use std::fs;
 use raw_cpuid::CpuId;
 
 #[cfg(target_os = "linux")]
-// This should be windows compatible. It's behind linux check just to avoid unused errors etc.
-mod decoder;
-#[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::*;
@@ -36,7 +32,7 @@ pub const PAGE_SIZE: usize = 4096;
 /// Returns `Ok(())` if Intel PT is available and has the features used by `LibAFL`, otherwise
 /// returns an `Err` containing a description of the reasons.
 ///
-/// If you use this with QEMU check out [`Self::availability_in_qemu()`] instead.
+/// If you use this with QEMU check out [`availability_in_qemu_kvm()`] instead.
 ///
 /// Due to the numerous factors that can affect `IntelPT` availability, this function was
 /// developed on a best-effort basis.
@@ -78,7 +74,7 @@ pub fn availability() -> Result<(), String> {
 /// Check if Intel PT is available on the current system and can be used in combination with
 /// QEMU.
 ///
-/// If you don't use this with QEMU check out [`IntelPT::availability()`] instead.
+/// If you don't use this with QEMU check out [`availability()`] instead.
 pub fn availability_in_qemu_kvm() -> Result<(), String> {
     let mut reasons = match availability() {
         Err(s) => vec![s],

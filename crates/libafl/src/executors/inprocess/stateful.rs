@@ -27,8 +27,8 @@ use crate::{
 
 /// The process executor simply calls a target function, as mutable reference to a closure
 /// The internal state of the executor is made available to the harness.
-pub type StatefulInProcessExecutor<'a, EM, ES, H, I, OT, S, Z> =
-    StatefulGenericInProcessExecutor<EM, ES, H, &'a mut H, (), I, OT, S, Z>;
+pub type StatefulInProcessExecutor<EM, ES, H, I, OT, S, Z> =
+    StatefulGenericInProcessExecutor<EM, ES, H, H, (), I, OT, S, Z>;
 
 /// The process executor simply calls a target function, as boxed `FnMut` trait object
 /// The internal state of the executor is made available to the harness.
@@ -123,7 +123,7 @@ where
     }
 }
 
-impl<'a, EM, ES, H, I, OT, S, Z> StatefulInProcessExecutor<'a, EM, ES, H, I, OT, S, Z>
+impl<EM, ES, H, I, OT, S, Z> StatefulInProcessExecutor<EM, ES, H, I, OT, S, Z>
 where
     H: FnMut(&mut ES, &mut S, &I) -> ExitKind + Sized,
     OT: ObserversTuple<I, S>,
@@ -132,7 +132,7 @@ where
 {
     /// Create a new in mem executor with the default timeout (5 sec)
     pub fn new<OF>(
-        harness_fn: &'a mut H,
+        harness_fn: H,
         exposed_executor_state: ES,
         observers: OT,
         fuzzer: &mut Z,
@@ -165,7 +165,7 @@ where
     ///
     /// This may return an error on unix, if signal handler setup fails
     pub fn with_timeout<OF>(
-        harness_fn: &'a mut H,
+        harness_fn: H,
         exposed_executor_state: ES,
         observers: OT,
         fuzzer: &mut Z,
@@ -285,26 +285,37 @@ where
 
     /// Retrieve the harness function.
     #[inline]
+    #[must_use]
     pub fn harness(&self) -> &H {
         self.harness_fn.borrow()
     }
 
     /// Retrieve the harness function for a mutable reference.
     #[inline]
+    #[must_use]
     pub fn harness_mut(&mut self) -> &mut H {
         self.harness_fn.borrow_mut()
     }
 
     /// The inprocess handlers
     #[inline]
+    #[must_use]
     pub fn hooks(&self) -> &(InProcessHooks<I, S>, HT) {
         self.inner.hooks()
     }
 
     /// The inprocess handlers (mutable)
     #[inline]
+    #[must_use]
     pub fn hooks_mut(&mut self) -> &mut (InProcessHooks<I, S>, HT) {
         self.inner.hooks_mut()
+    }
+
+    /// Retrieve the state, consuming the executor.
+    #[inline]
+    #[must_use]
+    pub fn into_state(self) -> ES {
+        self.exposed_executor_state
     }
 }
 
