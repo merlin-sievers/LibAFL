@@ -16,7 +16,7 @@ use crate::qemu::{
     closure_post_syscall_hook_wrapper, closure_pre_syscall_hook_wrapper,
     func_post_syscall_hook_wrapper, func_pre_syscall_hook_wrapper,
 };
-use crate::{forwarded_memory_read_hook_wrapper, forwarded_memory_write_hook_wrapper, ForwardedMemoryReadFnHook, ForwardedMemoryWriteFnHook};
+use crate::{ForwardedMemoryReadFnHook, ForwardedMemoryWriteFnHook, HaltFnHook, HaltHookId, forwarded_memory_read_hook_wrapper, forwarded_memory_write_hook_wrapper, halt_pre_exec_hook_wrapper};
 use crate::{
     CpuPostRunHook, CpuPreRunHook, CpuRunHookId, ForwardedMemoryHookId, ForwardedMemoryHookState, HookState, MemAccessInfo, NewThreadHookFn, Qemu,
     cpu_run_post_exec_hook_wrapper, cpu_run_pre_exec_hook_wrapper,
@@ -123,6 +123,8 @@ struct EmulatorHookCollection<ET, I, S> {
 
     forwarded_memory_hooks: Vec<Pin<Box<ForwardedMemoryHookState<ForwardedMemoryHookId>>>>,
 
+    halt_hooks: Vec<Pin<Box<HookState<HaltHookId>>>>,
+
     new_thread_hooks: Vec<Pin<Box<(NewThreadHookId, FatPtr)>>>,
 
     #[cfg(feature = "usermode")]
@@ -151,6 +153,8 @@ impl<ET, I, S> Default for EmulatorHookCollection<ET, I, S> {
             cpu_run_hooks: Vec::default(),
 
             forwarded_memory_hooks: Vec::default(),
+
+            halt_hooks: Vec::default(),
 
             new_thread_hooks: Vec::default(),
 
@@ -900,6 +904,58 @@ where
             id
         }
     }
+
+    pub fn halt(
+        &mut self,
+        halt_fn: HaltFnHook<ET, I, S>,
+    ) -> HaltHookId {
+        unsafe {
+            let raw_hook = get_raw_hook!(
+                halt_fn,
+                halt_pre_exec_hook_wrapper::<ET, I, S>,
+                unsafe extern "C" fn(&mut HookState<HaltHookId>, CPUStatePtr)
+            );
+
+            let repr = hook_to_repr!(halt_fn);
+
+            self.hook_collection
+                .halt_hooks
+                .push(Box::pin(HookState::new(
+                    HaltHookId::invalid(),
+                    repr.clone(),
+                    repr,
+                )));
+
+            let hook_state = &mut *ptr::from_mut::<HookState<HaltHookId>>(
+                self.hook_collection
+                    .halt_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+
+            let id = self
+                .qemu_hooks
+                .add_halt_hook(hook_state, raw_hook);
+
+            self.hook_collection
+                .halt_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
+    // pub fn halt_function(&self, hook: HaltFnHookFn<ET, I, S>) -> HaltHookId {
+    //     unsafe {
+    //         self.qemu_hooks
+    //             .add_halt_hook(transmute(hook), func_halt_hook_wrapper::<ET, I, S>)
+    //     }
+    // }
 }
 
 #[cfg(feature = "usermode")]
@@ -1234,6 +1290,13 @@ where
         write_hook: ForwardedMemoryWriteFnHook<ET, I, S>,
     ) -> ForwardedMemoryHookId {
         self.hooks.forwarded_memory(read_hook, write_hook)
+    }
+
+    pub fn halt(
+        &mut self,
+        halt_fn: HaltFnHook<ET, I, S>,
+    ) -> HaltHookId {
+        self.hooks.halt(halt_fn)
     }
 }
 

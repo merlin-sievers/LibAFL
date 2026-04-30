@@ -7916,6 +7916,9 @@ unsafe extern "C" {
     ) -> bool;
 }
 unsafe extern "C" {
+    pub fn libafl_cpu_interrupt(cs: *mut CPUState, exception: ::std::os::raw::c_int);
+}
+unsafe extern "C" {
     pub fn libafl_page_from_addr(addr: target_ulong) -> target_ulong;
 }
 unsafe extern "C" {

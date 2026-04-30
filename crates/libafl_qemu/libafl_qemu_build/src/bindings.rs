@@ -92,6 +92,7 @@ const WRAPPER_HEADER: &str = r#"
 #include "libafl/hooks/tcg/read_write.h"
 #include "libafl/hooks/cpu_run.h"
 #include "libafl/hooks/forwarded_memory.h"
+#include "libafl/hooks/halt.h"
 #include "libafl/hooks/thread.h"
 
 #ifdef CONFIG_USER_ONLY

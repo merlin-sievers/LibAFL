@@ -1084,6 +1084,29 @@ create_hook_id!(ForwardedMemory, libafl_qemu_remove_forwarded_memory_hook, false
 create_read_fn_wrapper!(forwarded_memory, (cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: *mut GuestAddr), bool, ForwardedMemoryHookId);
 create_write_fn_wrapper!(forwarded_memory, (cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr), ForwardedMemoryHookId);
 
+// Halt hook wrapper
+create_hook_types!(
+    HaltFn,
+    fn(
+        Qemu,
+        &mut EmulatorModules<ET, I, S>,
+        Option<&mut S>,
+        cpu: CPUStatePtr,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            Qemu,
+            &'a mut EmulatorModules<ET, I, S>,
+            Option<&'a mut S>,
+            CPUStatePtr
+        ),
+    >,
+    unsafe extern "C" fn(libafl_qemu_opaque: *const (), cpu: CPUStatePtr)
+);
+create_hook_id!(Halt, libafl_qemu_remove_halt_hook, false);
+create_pre_exec_wrapper!(halt, (cpu: CPUStatePtr), HaltHookId);
+create_wrapper!(halt, (cpu: CPUStatePtr));
+
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 ///
@@ -1418,6 +1441,19 @@ impl QemuHooks {
             let write_fn: Option<unsafe extern "C" fn(u64, cpu: CPUStatePtr, pc: GuestAddr, addr: GuestAddr, size: usize, value: GuestAddr)> = transmute(write_fn);
             let num = libafl_qemu_sys::libafl_hook_forwarded_memory_add(data, read_fn, write_fn);
             ForwardedMemoryHookId(num)
+        }
+    }
+
+    pub fn add_halt_hook<T: Into<HookData>>(
+        &self,
+        data: T,
+        callback: Option<unsafe extern "C" fn(T, cpu: CPUStatePtr)>,
+    ) -> HaltHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, cpu: CPUStatePtr)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_hook_halt_add(data, callback);
+            HaltHookId(num)
         }
     }
 }
